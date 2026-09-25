@@ -1,0 +1,6 @@
+{
+  "name": "MemStudio - AI Assistant With Memory",
+  "description": "AI Assistant with long-term conversational memory, cross-session context, personalization, and multi-agent memory workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
