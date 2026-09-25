@@ -8,6 +8,7 @@ import { OpenMemoryMCPViewer } from './components/OpenMemoryMCPViewer';
 import { AddEditMemoryModal } from './components/AddEditMemoryModal';
 import { ExportModal } from './components/ExportModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { QuickVoiceNoteRecorder } from './components/QuickVoiceNoteRecorder';
 
 import {
   INITIAL_MEMORIES,
@@ -395,9 +396,39 @@ export default function App() {
     );
   };
 
+  const handleToggleArchiveMemory = (id: string) => {
+    setMemories((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, archived: !m.archived } : m))
+    );
+  };
+
+  const handleBulkArchiveMemories = (ids: string[], archive: boolean) => {
+    setMemories((prev) =>
+      prev.map((m) => (ids.includes(m.id) ? { ...m, archived: archive } : m))
+    );
+  };
+
+  const handleAutoArchiveRarelyAccessed = (threshold: number = 3) => {
+    setMemories((prev) =>
+      prev.map((m) => {
+        if (!m.archived && !m.pinned && (m.accessCount ?? 0) <= threshold) {
+          return { ...m, archived: true };
+        }
+        return m;
+      })
+    );
+  };
+
   const handleSelectMemoryForInspection = (mem: MemoryItem) => {
     setSelectedMemoryForHighlight(mem);
     setRightPanelTab('memories');
+  };
+
+  const handleAddQuickVoiceMemories = (newMemories: MemoryItem[]) => {
+    setMemories((prev) => [...newMemories, ...prev]);
+    if (newMemories.length > 0) {
+      setSelectedMemoryForHighlight(newMemories[0]);
+    }
   };
 
   return (
@@ -495,6 +526,9 @@ export default function App() {
                 onDeleteMemory={handleDeleteMemory}
                 onDeleteMultipleMemories={handleDeleteMultipleMemories}
                 onBulkAddTags={handleBulkAddTags}
+                onToggleArchiveMemory={handleToggleArchiveMemory}
+                onBulkArchiveMemories={handleBulkArchiveMemories}
+                onAutoArchiveRarelyAccessed={handleAutoArchiveRarelyAccessed}
                 onMergeMemories={handleMergeMemories}
                 onTogglePinMemory={handleTogglePinMemory}
                 selectedMemoryForHighlight={selectedMemoryForHighlight}
@@ -548,6 +582,12 @@ export default function App() {
         onSelectMemory={handleSelectMemoryForInspection}
         onSelectSession={setActiveSessionId}
         onTriggerInspiration={handleSendMessage}
+      />
+
+      {/* Floating Record Quick Note Button & Audio Capture Suite */}
+      <QuickVoiceNoteRecorder
+        onAddMemories={handleAddQuickVoiceMemories}
+        activeSessionId={activeSessionId}
       />
     </div>
   );

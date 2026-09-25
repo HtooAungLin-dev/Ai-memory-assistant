@@ -12,7 +12,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Initialize Google GenAI if API key is provided
 let ai: GoogleGenAI | null = null;
@@ -631,6 +632,53 @@ Produce a consolidated multi-agent response report that addresses the task while
     res.json({ logs, synthesis });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Transcribe audio using Gemini multimodal
+app.post('/api/transcribe-audio', async (req, res) => {
+  try {
+    const { audioBase64, mimeType = 'audio/webm' } = req.body;
+    if (!audioBase64) {
+      return res.status(400).json({ error: 'Audio data is required' });
+    }
+
+    if (ai) {
+      const { result } = await executeWithModelFallback(async (model) => {
+        return await ai!.models.generateContent({
+          model,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: audioBase64,
+                  },
+                },
+                {
+                  text: 'You are an accurate audio transcriber. Transcribe all speech in this audio recording verbatim into clear text. Return ONLY the transcribed text. Do not add quotes, introductory phrases, or formatting commentary.',
+                },
+              ],
+            },
+          ],
+        });
+      });
+
+      if (result && result.text) {
+        return res.json({ transcript: result.text.trim() });
+      }
+    }
+
+    return res.json({
+      transcript: '',
+      fallback: true,
+      message: 'Audio received. Transcription fallback used.',
+    });
+  } catch (err: any) {
+    console.error('Audio transcription error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to transcribe audio' });
   }
 });
 

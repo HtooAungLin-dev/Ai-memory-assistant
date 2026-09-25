@@ -34,13 +34,21 @@ Traditional conversational LLMs start with a clean slate every time a session en
 - **Bulk Selection Actions**:
   - **Bulk Tagging**: Simultaneously attach new topic tags to multiple selected memories.
   - **Bulk Deletion**: Clean up redundant or expired shards with safe preview dialogs.
+  - **Cold Storage Archiving**: Isolate rarely accessed memory shards to keep your active workspace decluttered, with one-click restore.
 - **Global Search & Sorting**: Real-time filtering across keywords, categories, sentiment states, and tags.
 
-### 5. ✨ AI Semantic Deduplication & Consolidation
+### 5. 🎙️ Floating 'Record Quick Note' (Browser Microphone API)
+- **Zero-Friction Voice Ingestion**: Instant floating recorder button with real-time audio waveform visualizer powered by `AudioContext` and `AnalyserNode`.
+- **Dual-Path Speech Transcription**:
+  - **Web Speech API**: Real-time live streaming transcription directly in the browser as words are spoken.
+  - **Gemini Multimodal Audio Proxy**: Fallback `/api/transcribe-audio` endpoint for accurate verbatim transcription.
+- **Direct Memory Indexing**: Automatically runs captured speech through proposition extraction, assigns sentiment, attaches `#VoiceNote` tags, and injects into persistent vector storage.
+
+### 6. ✨ AI Semantic Deduplication & Consolidation
 - Evaluates the vector memory graph to detect redundant, overlapping, or rephrased statements.
 - Proposes unified, consolidated factual statements with editable previews before committing changes.
 
-### 6. 🤖 Multi-Agent Orchestration Swarm (CrewAI)
+### 7. 🤖 Multi-Agent Orchestration Swarm (CrewAI)
 - **Mem0 Ingest Agent**: Listens to conversational streams, extracts factual propositions, and calculates confidence embeddings.
 - **OpenMemory MCP Bridge**: Standardizes memory access across tools and models using the Model Context Protocol.
 - **LangChain Retrieval Agent**: Performs cosine similarity search to retrieve relevant shards.

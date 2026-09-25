@@ -14,6 +14,7 @@ export interface MemoryItem {
   lastRecalledAt?: string;
   sentiment?: MemorySentiment;
   tags?: string[];
+  archived?: boolean;
 }
 
 export interface ChatMessage {

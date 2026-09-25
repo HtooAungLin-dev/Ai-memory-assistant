@@ -25,6 +25,9 @@ import {
   Smile,
   Meh,
   Frown,
+  Archive,
+  ArchiveRestore,
+  RotateCcw,
 } from 'lucide-react';
 import { MemoryItem, MemoryCategory, MemorySentiment } from '../types';
 
@@ -46,6 +49,9 @@ interface MemoryInspectorProps {
   onDeleteMemory: (id: string) => void;
   onDeleteMultipleMemories?: (ids: string[]) => void;
   onBulkAddTags?: (ids: string[], tag: string) => void;
+  onToggleArchiveMemory?: (id: string) => void;
+  onBulkArchiveMemories?: (ids: string[], archive: boolean) => void;
+  onAutoArchiveRarelyAccessed?: (threshold?: number) => void;
   onMergeMemories?: (
     duplicateIds: string[],
     mergedEntry: {
@@ -68,10 +74,14 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
   onDeleteMemory,
   onDeleteMultipleMemories,
   onBulkAddTags,
+  onToggleArchiveMemory,
+  onBulkArchiveMemories,
+  onAutoArchiveRarelyAccessed,
   onMergeMemories,
   onTogglePinMemory,
   selectedMemoryForHighlight,
 }) => {
+  const [storageTab, setStorageTab] = useState<'active' | 'archived'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSentiment, setSelectedSentiment] = useState<string>('all');
@@ -129,22 +139,38 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
     return palette[Math.abs(hash) % palette.length];
   };
 
-  // Collect all unique tags across memories for quick filter pill bar
+  // Active vs Archived Pool split
+  const activeMemories = useMemo(() => memories.filter((m) => !m.archived), [memories]);
+  const archivedMemories = useMemo(() => memories.filter((m) => !!m.archived), [memories]);
+
+  // Rarely accessed memories in active workspace (accessCount <= 2, not pinned)
+  const rarelyAccessedActiveMemories = useMemo(
+    () => activeMemories.filter((m) => !m.pinned && (m.accessCount ?? 0) <= 2),
+    [activeMemories]
+  );
+
+  // Pool according to storageTab
+  const currentPoolMemories = useMemo(
+    () => (storageTab === 'archived' ? archivedMemories : activeMemories),
+    [storageTab, archivedMemories, activeMemories]
+  );
+
+  // Collect all unique tags across current pool for quick filter pill bar
   const allUniqueTags = useMemo(() => {
     const tagsSet = new Set<string>();
-    memories.forEach((m) => {
+    currentPoolMemories.forEach((m) => {
       if (m.tags && Array.isArray(m.tags)) {
         m.tags.forEach((t) => tagsSet.add(t));
       }
     });
     return Array.from(tagsSet).slice(0, 12);
-  }, [memories]);
+  }, [currentPoolMemories]);
 
-  // Global filtering logic by keyword, category, sentiment, and tag
+  // Global filtering logic by keyword, category, sentiment, and tag on current pool
   const filteredMemories = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
-    return memories
+    return currentPoolMemories
       .filter((m) => {
         // Tag filter match
         if (selectedTag && (!m.tags || !m.tags.includes(selectedTag))) {
@@ -188,12 +214,12 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
         }
         return b.id.localeCompare(a.id);
       });
-  }, [memories, searchQuery, selectedCategory, selectedSentiment, selectedTag, sortBy]);
+  }, [currentPoolMemories, searchQuery, selectedCategory, selectedSentiment, selectedTag, sortBy]);
 
-  // Selected memory objects for the confirmation dialog preview
+  // Selected memory objects for confirmation/preview dialogs
   const selectedMemories = useMemo(() => {
-    return memories.filter((m) => selectedIds.includes(m.id));
-  }, [memories, selectedIds]);
+    return currentPoolMemories.filter((m) => selectedIds.includes(m.id));
+  }, [currentPoolMemories, selectedIds]);
 
   const getCategoryColor = (cat: MemoryCategory) => {
     switch (cat) {
@@ -401,10 +427,10 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
     filteredMemories.length > 0 &&
     filteredMemories.every((m) => selectedIds.includes(m.id));
 
-  // Sentiment Counts for Stats
-  const positiveCount = memories.filter((m) => m.sentiment === 'positive').length;
-  const neutralCount = memories.filter((m) => !m.sentiment || m.sentiment === 'neutral').length;
-  const negativeCount = memories.filter((m) => m.sentiment === 'negative').length;
+  // Sentiment Counts for current active/archived pool
+  const positiveCount = currentPoolMemories.filter((m) => m.sentiment === 'positive').length;
+  const neutralCount = currentPoolMemories.filter((m) => !m.sentiment || m.sentiment === 'neutral').length;
+  const negativeCount = currentPoolMemories.filter((m) => m.sentiment === 'negative').length;
 
   return (
     <div className="flex flex-col h-full bg-white select-none relative">
@@ -421,7 +447,7 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
           <button
             onClick={handleRunDedup}
             disabled={isDeduping || memories.length < 2}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-neutral-900 shadow-2xs disabled:opacity-40 disabled:hover:bg-white"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-neutral-900 shadow-2xs disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
             title="Identify semantically redundant memory items and suggest merging them"
           >
             {isDeduping ? (
@@ -435,12 +461,12 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
           {/* Bulk Selection Mode Toggle */}
           <button
             onClick={handleToggleBulkMode}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors border cursor-pointer ${
               isBulkMode
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-semibold'
                 : 'border-neutral-200 bg-white text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
             }`}
-            title={isBulkMode ? 'Exit bulk selection mode' : 'Select multiple memories to delete'}
+            title={isBulkMode ? 'Exit bulk selection mode' : 'Select multiple memories to act on'}
           >
             <CheckSquare className="w-3.5 h-3.5" />
             <span>{isBulkMode ? 'Cancel' : 'Select'}</span>
@@ -448,7 +474,7 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
 
           <button
             onClick={onAddMemory}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold transition-colors shadow-2xs"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Fact</span>
@@ -456,11 +482,74 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
         </div>
       </div>
 
+      {/* Storage List View Switcher (Active Workspace vs Archived Storage) */}
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50/90 px-3 pt-2">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setStorageTab('active');
+              setSelectedIds([]);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
+              storageTab === 'active'
+                ? 'border-indigo-600 text-indigo-950 bg-white rounded-t-md shadow-2xs'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Active Workspace</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-neutral-200/80 text-neutral-700">
+              {activeMemories.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setStorageTab('archived');
+              setSelectedIds([]);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ml-1 ${
+              storageTab === 'archived'
+                ? 'border-amber-600 text-amber-950 bg-white rounded-t-md shadow-2xs'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5 text-amber-600" />
+            <span>Archived Storage</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold">
+              {archivedMemories.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Auto-archive cold memories recommendation */}
+        {storageTab === 'active' && rarelyAccessedActiveMemories.length > 0 && (
+          <div className="pb-1.5">
+            <button
+              onClick={() => {
+                if (onAutoArchiveRarelyAccessed) {
+                  onAutoArchiveRarelyAccessed(2);
+                  setDedupNotice(
+                    `Moved ${rarelyAccessedActiveMemories.length} rarely accessed cold memories to archived storage.`
+                  );
+                  setTimeout(() => setDedupNotice(null), 4000);
+                }
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs cursor-pointer"
+              title="Move non-pinned memories accessed ≤ 2 times to cold storage archive to declutter active workspace"
+            >
+              <Archive className="w-3 h-3 text-amber-600" />
+              <span>Auto-Archive Cold ({rarelyAccessedActiveMemories.length})</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Dedup Notice Notification */}
       {dedupNotice && (
         <div className="bg-amber-50 border-b border-amber-200 px-3.5 py-2 text-[11px] text-amber-800 flex items-center justify-between">
           <span>{dedupNotice}</span>
-          <button onClick={() => setDedupNotice(null)} className="font-bold hover:text-amber-950">✕</button>
+          <button onClick={() => setDedupNotice(null)} className="font-bold hover:text-amber-950 cursor-pointer">✕</button>
         </div>
       )}
 
@@ -494,30 +583,70 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
             {selectedIds.length > 0 && (
               <button
                 onClick={() => setSelectedIds([])}
-                className="text-[10px] text-neutral-500 hover:text-neutral-800 font-medium px-1.5 py-0.5"
+                className="text-[10px] text-neutral-500 hover:text-neutral-800 font-medium px-1.5 py-0.5 cursor-pointer"
               >
                 Clear
               </button>
             )}
 
-            {/* Bulk Add Tags Button */}
-            <button
-              onClick={() => {
-                setBulkTagInput('');
-                setIsBulkTagModalOpen(true);
-              }}
-              disabled={selectedIds.length === 0}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
-              title="Apply a new descriptive tag to all selected memory items simultaneously"
-            >
-              <Tag className="w-3.5 h-3.5" />
-              <span>Add Tag ({selectedIds.length})</span>
-            </button>
+            {storageTab === 'active' ? (
+              <>
+                {/* Bulk Add Tags Button */}
+                <button
+                  onClick={() => {
+                    setBulkTagInput('');
+                    setIsBulkTagModalOpen(true);
+                  }}
+                  disabled={selectedIds.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
+                  title="Apply a new descriptive tag to all selected memory items simultaneously"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>Add Tag ({selectedIds.length})</span>
+                </button>
+
+                {/* Bulk Archive Button */}
+                <button
+                  onClick={() => {
+                    if (onBulkArchiveMemories && selectedIds.length > 0) {
+                      onBulkArchiveMemories(selectedIds, true);
+                      setDedupNotice(`Moved ${selectedIds.length} memories to archived storage.`);
+                      setTimeout(() => setDedupNotice(null), 4000);
+                      setSelectedIds([]);
+                    }
+                  }}
+                  disabled={selectedIds.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
+                  title="Move selected memories to archived storage to declutter active workspace"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>Archive ({selectedIds.length})</span>
+                </button>
+              </>
+            ) : (
+              /* Bulk Restore Button */
+              <button
+                onClick={() => {
+                  if (onBulkArchiveMemories && selectedIds.length > 0) {
+                    onBulkArchiveMemories(selectedIds, false);
+                    setDedupNotice(`Restored ${selectedIds.length} memories to active workspace.`);
+                    setTimeout(() => setDedupNotice(null), 4000);
+                    setSelectedIds([]);
+                  }
+                }}
+                disabled={selectedIds.length === 0}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
+                title="Restore selected memories back to active workspace"
+              >
+                <ArchiveRestore className="w-3.5 h-3.5" />
+                <span>Restore ({selectedIds.length})</span>
+              </button>
+            )}
 
             <button
               onClick={() => setIsConfirmDialogOpen(true)}
               disabled={selectedIds.length === 0}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:hover:bg-rose-600 text-white text-[11px] font-semibold transition-colors shadow-2xs"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:hover:bg-rose-600 text-white text-[11px] font-semibold transition-colors shadow-2xs cursor-pointer"
               title="Delete all selected memory items"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -536,10 +665,12 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
             setSelectedTag(null);
           }}
           className="p-1.5 rounded-md bg-white border border-neutral-200/60 shadow-2xs cursor-pointer hover:border-neutral-300 transition-colors"
-          title="Total memories stored (Click to reset filters)"
+          title={`Total ${storageTab === 'active' ? 'active' : 'archived'} memories (Click to reset filters)`}
         >
-          <div className="text-xs font-bold text-neutral-900">{memories.length}</div>
-          <div className="text-[9px] text-neutral-400 uppercase font-medium">Total</div>
+          <div className="text-xs font-bold text-neutral-900">{currentPoolMemories.length}</div>
+          <div className="text-[9px] text-neutral-400 uppercase font-medium">
+            {storageTab === 'active' ? 'Active Pool' : 'Archived'}
+          </div>
         </div>
 
         <div
@@ -768,20 +899,50 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
 
       {/* Memory Shards List */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+        {/* Cold Storage Information Banner (shown in Archived tab) */}
+        {storageTab === 'archived' && (
+          <div className="mb-2 p-2.5 bg-amber-50/90 border border-amber-200/90 rounded-lg text-xs text-amber-900 flex items-start gap-2 shadow-2xs">
+            <Archive className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-bold text-[11px] flex items-center justify-between">
+                <span>Cold Vector Storage</span>
+                <span className="text-[10px] font-normal text-amber-700">
+                  {archivedMemories.length} {archivedMemories.length === 1 ? 'archived item' : 'archived items'}
+                </span>
+              </div>
+              <p className="text-[10px] text-amber-800 leading-relaxed mt-0.5">
+                Rarely accessed or retired facts are preserved here to declutter your active workspace. They can be restored back to active recall at any time.
+              </p>
+            </div>
+          </div>
+        )}
+
         {filteredMemories.length === 0 ? (
           <div className="p-8 text-center text-neutral-400 text-xs space-y-2">
-            <Search className="w-8 h-8 text-neutral-300 mx-auto" />
-            <p className="font-semibold text-neutral-700">No matching memories found</p>
-            <p className="text-[11px] text-neutral-500">
-              No memory items match your current search, tag, category, or sentiment filter.
-            </p>
-            {isFilterActive && (
-              <button
-                onClick={handleClearFilters}
-                className="mt-2 px-3 py-1.5 rounded-md bg-neutral-900 text-white text-xs font-medium hover:bg-neutral-800 transition-colors"
-              >
-                Reset Search & Filters
-              </button>
+            {storageTab === 'archived' ? (
+              <>
+                <Archive className="w-8 h-8 text-neutral-300 mx-auto" />
+                <p className="font-semibold text-neutral-700">Archived storage is empty</p>
+                <p className="text-[11px] text-neutral-500">
+                  No memories are currently archived. Rarely accessed items can be moved here to keep your active workspace decluttered.
+                </p>
+              </>
+            ) : (
+              <>
+                <Search className="w-8 h-8 text-neutral-300 mx-auto" />
+                <p className="font-semibold text-neutral-700">No matching memories found</p>
+                <p className="text-[11px] text-neutral-500">
+                  No memory items match your current search, tag, category, or sentiment filter.
+                </p>
+                {isFilterActive && (
+                  <button
+                    onClick={handleClearFilters}
+                    className="mt-2 px-3 py-1.5 rounded-md bg-neutral-900 text-white text-xs font-medium hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    Reset Search & Filters
+                  </button>
+                )}
+              </>
             )}
           </div>
         ) : (
@@ -805,6 +966,8 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                     ? 'border-indigo-400 bg-indigo-50/60 ring-2 ring-indigo-400 shadow-xs'
                     : isHighlighted
                     ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-200 shadow-xs'
+                    : mem.archived
+                    ? 'border-amber-200/80 bg-amber-50/30 hover:border-amber-300 hover:shadow-2xs'
                     : 'border-neutral-200/80 bg-white hover:border-neutral-300 hover:shadow-2xs'
                 }`}
               >
@@ -858,10 +1021,18 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                         </span>
 
                         {/* Pinned Indicator */}
-                        {mem.pinned && (
+                        {mem.pinned && !mem.archived && (
                           <span className="flex items-center gap-0.5 text-[9px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold border border-indigo-200">
                             <Pin className="w-2.5 h-2.5" />
                             <span>Pinned</span>
+                          </span>
+                        )}
+
+                        {/* Archived Badge */}
+                        {mem.archived && (
+                          <span className="flex items-center gap-0.5 text-[9px] text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded font-semibold border border-amber-300">
+                            <Archive className="w-2.5 h-2.5 text-amber-700" />
+                            <span>Archived</span>
                           </span>
                         )}
                       </div>
@@ -869,34 +1040,69 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                       {/* Actions (visible when not in bulk mode) */}
                       {!isBulkMode && (
                         <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onTogglePinMemory(mem.id);
-                            }}
-                            className={`p-1 rounded hover:bg-neutral-100 transition-colors ${
-                              mem.pinned ? 'text-indigo-600' : 'text-neutral-400'
-                            }`}
-                            title={mem.pinned ? 'Unpin from core memory' : 'Pin to core memory priority'}
-                          >
-                            <Pin className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditMemory(mem);
-                            }}
-                            className="p-1 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
-                            title="Edit memory shard"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                          </button>
+                          {mem.archived ? (
+                            /* Unarchive / Restore button */
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onToggleArchiveMemory) {
+                                  onToggleArchiveMemory(mem.id);
+                                  setDedupNotice(`Restored memory to active workspace.`);
+                                  setTimeout(() => setDedupNotice(null), 3500);
+                                }
+                              }}
+                              className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer"
+                              title="Restore to active workspace"
+                            >
+                              <ArchiveRestore className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onTogglePinMemory(mem.id);
+                                }}
+                                className={`p-1 rounded hover:bg-neutral-100 transition-colors cursor-pointer ${
+                                  mem.pinned ? 'text-indigo-600' : 'text-neutral-400'
+                                }`}
+                                title={mem.pinned ? 'Unpin from core memory' : 'Pin to core memory priority'}
+                              >
+                                <Pin className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditMemory(mem);
+                                }}
+                                className="p-1 rounded hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors cursor-pointer"
+                                title="Edit memory shard"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                              {/* Archive Button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onToggleArchiveMemory) {
+                                    onToggleArchiveMemory(mem.id);
+                                    setDedupNotice(`Moved memory to archived storage.`);
+                                    setTimeout(() => setDedupNotice(null), 3500);
+                                  }
+                                }}
+                                className="p-1 rounded hover:bg-amber-100 text-neutral-400 hover:text-amber-700 transition-colors cursor-pointer"
+                                title="Move to Archived Storage (declutter active workspace)"
+                              >
+                                <Archive className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               onDeleteMemory(mem.id);
                             }}
-                            className="p-1 rounded hover:bg-neutral-100 text-neutral-400 hover:text-red-600 transition-colors"
+                            className="p-1 rounded hover:bg-neutral-100 text-neutral-400 hover:text-red-600 transition-colors cursor-pointer"
                             title="Delete memory shard"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -937,7 +1143,7 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                       </div>
                     )}
 
-                    {/* Origin Session & Confidence Footnote */}
+                    {/* Origin Session, Access Hits & Confidence Footnote */}
                     <div className="flex items-center justify-between text-[10px] text-neutral-400 pt-1.5 border-t border-neutral-100 font-normal">
                       <div
                         className="flex items-center gap-1 truncate max-w-[170px]"
@@ -947,9 +1153,22 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                         <span className="truncate">{highlightMatches(mem.sessionTitle, searchQuery)}</span>
                       </div>
 
-                      <span className="font-mono text-neutral-500">
-                        {(mem.confidence * 100).toFixed(0)}% conf
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {mem.archived ? (
+                          <span className="flex items-center gap-0.5 text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded font-medium border border-amber-200">
+                            <Archive className="w-2.5 h-2.5 text-amber-600" />
+                            <span>Cold Storage</span>
+                          </span>
+                        ) : (
+                          <span className="text-neutral-400 font-mono" title="Access count">
+                            {mem.accessCount || 0} hits
+                          </span>
+                        )}
+
+                        <span className="font-mono text-neutral-500">
+                          {(mem.confidence * 100).toFixed(0)}% conf
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
