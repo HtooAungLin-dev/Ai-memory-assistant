@@ -30,6 +30,7 @@ interface ChatAreaProps {
   memories: MemoryItem[];
   onSelectMemoryForInspection: (mem: MemoryItem) => void;
   recentlyExtractedMemories: MemoryItem[];
+  onSaveToContextLayer?: (text: string) => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -40,6 +41,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   memories,
   onSelectMemoryForInspection,
   recentlyExtractedMemories,
+  onSaveToContextLayer,
 }) => {
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -311,7 +313,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <div className="flex items-center gap-2 px-1 text-[10px] text-neutral-400">
                   <button
                     onClick={() => copyToClipboard(msg.id, msg.content)}
-                    className="hover:text-neutral-700 flex items-center gap-1 transition-colors"
+                    className="hover:text-neutral-700 flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     {copiedId === msg.id ? (
                       <>
@@ -325,6 +327,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       </>
                     )}
                   </button>
+
+                  {onSaveToContextLayer && (
+                    <button
+                      onClick={() => onSaveToContextLayer(msg.content)}
+                      className="hover:text-indigo-600 flex items-center gap-1 transition-colors cursor-pointer text-neutral-400 hover:bg-neutral-100 px-1 py-0.5 rounded"
+                      title="Save this turn as a verified ClariLayer durable context decision"
+                    >
+                      <Sparkles className="w-3 h-3 text-indigo-500" />
+                      <span>Remember to Context Layer</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

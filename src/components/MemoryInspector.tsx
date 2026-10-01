@@ -104,10 +104,14 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
 
   const categories: { id: string; label: string; count?: number }[] = [
     { id: 'all', label: 'All Categories' },
-    { id: 'identity', label: 'Identity' },
+    { id: 'decision', label: 'Decisions' },
+    { id: 'definition', label: 'Definitions' },
+    { id: 'rule', label: 'Rules' },
+    { id: 'lesson', label: 'Lessons' },
     { id: 'preference', label: 'Preferences' },
-    { id: 'project', label: 'Project' },
+    { id: 'identity', label: 'Identity' },
     { id: 'constraint', label: 'Constraints' },
+    { id: 'project', label: 'Project' },
     { id: 'workflow', label: 'Workflows' },
     { id: 'knowledge', label: 'Knowledge' },
   ];
@@ -223,6 +227,14 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
 
   const getCategoryColor = (cat: MemoryCategory) => {
     switch (cat) {
+      case 'decision':
+        return 'text-indigo-700 bg-indigo-50 border-indigo-200';
+      case 'definition':
+        return 'text-sky-700 bg-sky-50 border-sky-200';
+      case 'rule':
+        return 'text-rose-700 bg-rose-50 border-rose-200 font-bold';
+      case 'lesson':
+        return 'text-amber-800 bg-amber-50 border-amber-200';
       case 'identity':
         return 'text-blue-700 bg-blue-50 border-blue-200';
       case 'preference':
@@ -1112,9 +1124,49 @@ export const MemoryInspector: React.FC<MemoryInspectorProps> = ({
                     </div>
 
                     {/* Memory Content with Keyword Highlighting */}
-                    <p className="text-neutral-900 font-medium leading-relaxed mb-2">
+                    <p className="text-neutral-900 font-medium leading-relaxed mb-1.5">
                       {highlightMatches(mem.content, searchQuery)}
                     </p>
+
+                    {/* ClariLayer Decision Rationale */}
+                    {mem.decisionRationale && (
+                      <div className="mb-2 p-1.5 rounded-md bg-neutral-50 border border-neutral-200/80 text-[11px] text-neutral-700">
+                        <span className="font-semibold text-neutral-900">Rationale: </span>
+                        <span>{mem.decisionRationale}</span>
+                      </div>
+                    )}
+
+                    {/* ClariLayer Caveat Alert Banner */}
+                    {mem.verification?.status === 'caveat' && mem.verification?.caveatNote && (
+                      <div className="mb-2 p-1.5 rounded-md bg-amber-50 border border-amber-300 text-[10px] text-amber-900 flex items-start gap-1">
+                        <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Caveat: </strong> {mem.verification.caveatNote}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ClariLayer Scope and Verification Tags */}
+                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                      {mem.scope && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
+                          {mem.scope}
+                        </span>
+                      )}
+
+                      {mem.verification?.status === 'verified' && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                          <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                          <span>Grounded</span>
+                        </span>
+                      )}
+
+                      {mem.userCurated && (
+                        <span className="text-[9px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+                          Curated
+                        </span>
+                      )}
+                    </div>
 
                     {/* Descriptive Tags as Colored Chips */}
                     {mem.tags && mem.tags.length > 0 && (

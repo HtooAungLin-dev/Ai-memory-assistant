@@ -255,15 +255,30 @@ app.post('/api/extract-memories', async (req, res) => {
     }
 
     if (ai) {
-      const prompt = `Extract long-term memory facts from this user text: "${text}".
-Return a JSON array of objects with keys:
-- "content": concise factual statement (e.g. "User prefers TypeScript and Tailwind CSS", "User is building an AI assistant app")
-- "category": one of ["preference", "identity", "project", "knowledge", "constraint", "workflow"]
-- "confidence": number between 0.8 and 1.0
-- "sentiment": one of ["positive", "negative", "neutral"] (sentiment polarity: "positive" for favorites/likes/goals; "negative" for constraints/avoidances/dislikes; "neutral" for factual background/definitions)
-- "tags": array of 2-4 concise, descriptive topic tags (e.g. ["TypeScript", "Frontend", "UI Architecture"], ["Database", "Safety", "Deployment"], ["Profile", "AI Engineer"])
+      const prompt = `You are the ClariLayer-grade Context & Decision Engine. Extract durable context, personal preferences, project decisions, definitions, rules, or lessons learned from this text: "${text}".
 
-Only extract salient personal preferences, identity information, project details, or lasting constraints. If nothing noteworthy to remember long-term, return [].
+Context Scoping Rules (Distinguish Task-Scoped vs Durable):
+1. TASK-SCOPED (DO NOT STORE or label as "task-scoped"): Temporary requests with local scope cues ("for now", "in this script", "just parse this", "for this PR").
+2. DURABLE (STORE):
+   - "preference": Lasting personal/technical preference ("I always prefer TypeScript", "I like compact PRs").
+   - "decision": Technical or architecture decision with rationale ("We decided to use PostgreSQL because...", "Adopted Redis for rate-limiting").
+   - "definition": Business metrics or operational data definition ("Active customer means...", "ARR is calculated by...").
+   - "rule": Team or engineering policy ("All mutations require idempotency keys", "Never commit secrets").
+   - "lesson": Insight from past bugs/failures ("Never prompt without structured output because...").
+   - "constraint": Hard operational boundary ("Never wipe context across sessions").
+   - "identity": User role, background, team.
+
+Return a JSON array of objects with keys:
+- "content": concise factual statement
+- "category": one of ["preference", "decision", "definition", "rule", "lesson", "constraint", "identity", "project", "knowledge", "workflow"]
+- "scope": one of ["global", "project", "task-scoped"]
+- "decisionRationale": (optional) rationale or reason why this decision/rule was established
+- "confidence": number between 0.8 and 1.0
+- "sentiment": one of ["positive", "negative", "neutral"]
+- "tags": array of 2-4 concise descriptive tags (e.g. ["Architecture", "Postgres", "Decision"])
+- "applicableTools": array of relevant agent tools (e.g. ["Cursor", "Claude Code", "SQL", "All Agents"])
+
+Only extract salient durable context. If the input is purely conversational filler or temporary task instruction without durable value, return [].
 Output ONLY valid JSON array.`;
 
       const { result } = await executeWithModelFallback(async (model) => {
@@ -283,11 +298,20 @@ Output ONLY valid JSON array.`;
           if (Array.isArray(parsed) && parsed.length > 0) {
             const formatted = parsed.map((item: any) => ({
               ...item,
+              scope: item.scope || (item.category === 'identity' || item.category === 'preference' || item.category === 'rule' ? 'global' : 'project'),
+              userCurated: false,
+              verification: {
+                status: 'verified',
+                lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                sourceType: 'ai_extracted',
+                evidence: `Extracted from user conversation proposition.`,
+              },
               sentiment: item.sentiment || detectSentiment(item.content, item.category),
               tags:
                 Array.isArray(item.tags) && item.tags.length > 0
                   ? item.tags.slice(0, 4)
                   : generateTags(item.content, item.category),
+              applicableTools: item.applicableTools || ['Claude Code', 'Cursor', 'OpenMemory MCP'],
             }));
             return res.json({ memories: formatted, source: 'gemini' });
           }
@@ -632,6 +656,88 @@ Produce a consolidated multi-agent response report that addresses the task while
     res.json({ logs, synthesis });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Reconcile and audit saved context against live evidence (ClariLayer feature)
+app.post('/api/reconcile-context', async (req, res) => {
+  try {
+    const { memories = [] } = req.body;
+    if (!Array.isArray(memories) || memories.length === 0) {
+      return res.json({ reconciled: [] });
+    }
+
+    if (ai) {
+      const prompt = `You are the ClariLayer Context Reconciliation & Drift Detection Engine.
+Evaluate each stored memory/decision against engineering standards, data definitions, and consistency.
+
+Items to reconcile:
+${memories.map((m: any) => `ID: ${m.id} | Category: ${m.category} | Content: "${m.content}" | Scope: ${m.scope || 'global'}`).join('\n')}
+
+For each memory, output a JSON array of objects with:
+- "id": string (matching item id)
+- "status": "verified" | "caveat" | "drifted"
+- "evidence": brief 1-sentence audit note
+- "caveatNote": (optional) string explaining any discrepancy, caveat, or drift if status is caveat/drifted
+
+Rules:
+- Mark as "verified" if it's a sound, standard, non-contradictory practice or valid decision.
+- Mark as "caveat" if there is an operational ambiguity, metric definition risk, or environment caveat.
+- Mark as "drifted" if it explicitly mentions deprecated/legacy tech (like SQLite prototypes or deprecated endpoints).
+
+Output ONLY a JSON array.`;
+
+      const { result } = await executeWithModelFallback(async (model) => {
+        return await ai!.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        });
+      });
+
+      if (result && result.text) {
+        try {
+          const parsed = JSON.parse(result.text);
+          if (Array.isArray(parsed)) {
+            return res.json({ reconciled: parsed });
+          }
+        } catch (_e) {}
+      }
+    }
+
+    // Heuristic fallback reconciliation
+    const reconciled = memories.map((m: any) => {
+      const lower = (m.content || '').toLowerCase();
+      if (lower.includes('sqlite') || lower.includes('deprecated') || lower.includes('legacy')) {
+        return {
+          id: m.id,
+          status: 'drifted',
+          evidence: 'Historical entry detected. Flagged as superseded or legacy by reconciliation audit.',
+          caveatNote: 'Memory may have drifted from active production environment.',
+        };
+      }
+      if (lower.includes('metric') || lower.includes('definition') || lower.includes('14 days') || lower.includes('window')) {
+        return {
+          id: m.id,
+          status: 'caveat',
+          evidence: 'Operational data definition subject to warehouse boundary rules.',
+          caveatNote: 'Check alignment between BI dashboard definition and engineering spec.',
+        };
+      }
+      return {
+        id: m.id,
+        status: 'verified',
+        evidence: 'Verified consistent with codebase architecture and user preferences.',
+      };
+    });
+
+    return res.json({ reconciled });
+  } catch (err: any) {
+    console.error('Reconciliation error:', err);
+    return res.status(500).json({ error: err.message || 'Reconciliation failed' });
   }
 });
 

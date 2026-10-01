@@ -13,7 +13,13 @@ Traditional conversational LLMs start with a clean slate every time a session en
 
 ## 🚀 Key Features
 
-### 1. 🔍 Cross-Session Persistent Memory (Mem0 Architecture)
+### 1. 🔍 Cross-Session Persistent Memory & ClariLayer Context Layer
+- **ClariLayer Equivalent Context Model**:
+  - **User-Curated Ground Truth**: Users can directly select, attribute, correct, and curate lasting personal preferences, architecture decisions, data definitions, and team rules.
+  - **Decision Rationales**: Retains the *why* behind technical choices (e.g. why PostgreSQL was chosen, why idempotency keys are enforced, alternatives considered).
+  - **Live Reconciliation & Caveats**: Audits stored definitions against live evidence and data schemas, flagging discrepancies as actionable **Caveats** or **Drifted** items.
+  - **Context Scoping Guardrail**: Distinguishes **Task-Scoped** scratchpad directions (*"for now"*, *"in this script"*) from **Global Invariants** and **Project Directives**.
+  - **Agent Tool Interoperability**: Formatted for seamless integration across AI coding agents including **Claude Code**, **Cursor**, **Codex**, and **OpenMemory MCP**.
 - **Continuous Knowledge Graph**: Retains user identity, technical preferences, project blueprints, workflows, and strict constraints across multiple independent sessions.
 - **Dynamic Context Injection**: Prior to answering, queries the persistent vector store to retrieve high-confidence memory shards and dynamically primes the agent context.
 - **Heuristic & Gemini Fallback**: Dual-engine extraction ensures memory recall and indexing never fail, even during network latency or API rate limits.

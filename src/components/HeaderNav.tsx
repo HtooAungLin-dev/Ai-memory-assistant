@@ -59,6 +59,12 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-50 border border-neutral-200/70">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
+          <span className="font-semibold text-neutral-700">ClariLayer</span>
+          <span className="text-neutral-400">Context</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-50 border border-neutral-200/70">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
           <span className="font-semibold text-neutral-700">OpenMemory</span>
           <span className="text-neutral-400">MCP</span>

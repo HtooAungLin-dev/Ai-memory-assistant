@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Brain, Sparkles, Pin, Tag, Plus } from 'lucide-react';
-import { MemoryItem, MemoryCategory, MemorySentiment, Session } from '../types';
+import { X, Brain, Sparkles, Pin, Tag, Plus, CheckCircle, ShieldCheck, HelpCircle } from 'lucide-react';
+import { MemoryItem, MemoryCategory, MemorySentiment, ContextScope, VerificationStatus, Session } from '../types';
 
 interface AddEditMemoryModalProps {
   isOpen: boolean;
@@ -21,30 +21,45 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
 }) => {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<MemoryCategory>('preference');
+  const [scope, setScope] = useState<ContextScope>('global');
+  const [decisionRationale, setDecisionRationale] = useState('');
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('verified');
   const [confidence, setConfidence] = useState(0.95);
   const [pinned, setPinned] = useState(false);
+  const [userCurated, setUserCurated] = useState(true);
   const [sessionId, setSessionId] = useState(activeSessionId);
   const [sentiment, setSentiment] = useState<MemorySentiment>('neutral');
   const [tags, setTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
+  const [applicableTools, setApplicableTools] = useState<string[]>(['Claude Code', 'Cursor', 'OpenMemory MCP']);
 
   useEffect(() => {
     if (editingMemory) {
       setContent(editingMemory.content);
       setCategory(editingMemory.category);
+      setScope(editingMemory.scope || 'global');
+      setDecisionRationale(editingMemory.decisionRationale || '');
+      setVerificationStatus(editingMemory.verification?.status || 'verified');
       setConfidence(editingMemory.confidence);
       setPinned(editingMemory.pinned || false);
+      setUserCurated(editingMemory.userCurated !== false);
       setSessionId(editingMemory.sessionId);
       setSentiment(editingMemory.sentiment || 'neutral');
       setTags(editingMemory.tags || []);
+      setApplicableTools(editingMemory.applicableTools || ['Claude Code', 'Cursor', 'OpenMemory MCP']);
     } else {
       setContent('');
       setCategory('preference');
+      setScope('global');
+      setDecisionRationale('');
+      setVerificationStatus('verified');
       setConfidence(0.95);
       setPinned(false);
+      setUserCurated(true);
       setSessionId(activeSessionId);
       setSentiment('positive');
       setTags(['Preferences', 'Context']);
+      setApplicableTools(['Claude Code', 'Cursor', 'OpenMemory MCP']);
     }
   }, [editingMemory, activeSessionId, isOpen]);
 
@@ -74,12 +89,24 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
       ...(editingMemory ? { id: editingMemory.id } : {}),
       content: content.trim(),
       category,
+      scope,
+      decisionRationale: decisionRationale.trim() || undefined,
       confidence,
       pinned,
+      userCurated,
       sessionId,
       sessionTitle: matchedSession?.title || 'Session Context',
       sentiment,
       tags,
+      verification: {
+        status: verificationStatus,
+        lastChecked: 'Just now',
+        sourceType: userCurated ? 'user_curated' : 'ai_extracted',
+        evidence: userCurated
+          ? 'Explicitly curated and confirmed by user.'
+          : 'Extracted automatically from conversation proposition.',
+      },
+      applicableTools,
     });
 
     onClose();
@@ -87,19 +114,22 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
+        <div className="p-4 border-b border-neutral-100 flex items-center justify-between shrink-0 bg-neutral-50/70">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
               <Brain className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-neutral-900">
-                {editingMemory ? 'Edit Long-Term Memory' : 'Add Long-Term Memory Fact'}
+              <h3 className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
+                <span>{editingMemory ? 'Edit Context Item' : 'Add ClariLayer Context Item'}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-mono">
+                  Durable Context
+                </span>
               </h3>
               <p className="text-[10px] text-neutral-500">
-                Directly modify propositions stored in Mem0 vector graph
+                Curate personal preferences, decisions, data definitions, and rules with full attribution
               </p>
             </div>
           </div>
@@ -112,20 +142,36 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs">
+        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs overflow-y-auto flex-1">
           <div>
             <label className="block font-semibold text-neutral-700 mb-1">
-              Memory Proposition / Fact
+              Context Statement / Decision / Definition
             </label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="e.g. User prefers React 19, TypeScript, and dark-themed developer tools."
+              placeholder="e.g. Decision: Adopted PostgreSQL for relational integrity; Definition: Active user is someone active in last 14 days."
               rows={3}
               required
-              className="w-full p-2.5 rounded-lg border border-neutral-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 leading-relaxed"
+              className="w-full p-2.5 rounded-lg border border-neutral-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 leading-relaxed font-medium"
             />
           </div>
+
+          {/* Decision Rationale */}
+          {(category === 'decision' || category === 'rule' || category === 'preference' || category === 'lesson') && (
+            <div className="bg-amber-50/60 border border-amber-200/80 rounded-lg p-2.5 space-y-1">
+              <label className="block text-[11px] font-bold text-amber-900">
+                Decision Rationale & Context (ClariLayer Principle)
+              </label>
+              <textarea
+                value={decisionRationale}
+                onChange={(e) => setDecisionRationale(e.target.value)}
+                placeholder="Explain WHY this decision was made or why this preference holds (e.g. 'Prevents duplicate billing when webhook retries fail')."
+                rows={2}
+                className="w-full p-2 rounded-md border border-amber-200 bg-white text-xs outline-none focus:border-amber-400"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -135,17 +181,38 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as MemoryCategory)}
-                className="w-full p-2 rounded-lg border border-neutral-200 outline-none bg-white"
+                className="w-full p-2 rounded-lg border border-neutral-200 outline-none bg-white font-medium"
               >
-                <option value="identity">Identity</option>
-                <option value="preference">Preference</option>
+                <option value="preference">Preference (Personal/Team)</option>
+                <option value="decision">Decision (Arch / Tech)</option>
+                <option value="definition">Definition (Metric / Data)</option>
+                <option value="rule">Rule (Team Policy)</option>
+                <option value="lesson">Lesson Learned</option>
+                <option value="constraint">System Constraint</option>
+                <option value="identity">User Identity</option>
                 <option value="project">Project Context</option>
-                <option value="constraint">Constraint</option>
                 <option value="workflow">Workflow</option>
-                <option value="knowledge">Knowledge</option>
+                <option value="knowledge">Knowledge Base</option>
               </select>
             </div>
 
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">
+                Context Scope (ClariLayer Guardrail)
+              </label>
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as ContextScope)}
+                className="w-full p-2 rounded-lg border border-neutral-200 outline-none bg-white font-medium"
+              >
+                <option value="global">Global (Applies Across All Projects)</option>
+                <option value="project">Project-Specific (Current App)</option>
+                <option value="task-scoped">Task-Scoped (Temporary Scratchpad)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-neutral-700 mb-1">
                 Origin Session
@@ -162,11 +229,27 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
                 ))}
               </select>
             </div>
+
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">
+                Reconciliation / Audit Status
+              </label>
+              <select
+                value={verificationStatus}
+                onChange={(e) => setVerificationStatus(e.target.value as VerificationStatus)}
+                className="w-full p-2 rounded-lg border border-neutral-200 outline-none bg-white"
+              >
+                <option value="verified">Verified (Consistent & Grounded)</option>
+                <option value="caveat">Caveat (Flagged with Note)</option>
+                <option value="drifted">Drifted (May Need Update)</option>
+                <option value="unverified">Unverified (Pending Audit)</option>
+              </select>
+            </div>
           </div>
 
           <div>
             <label className="block font-semibold text-neutral-700 mb-1">
-              Sentiment Analysis
+              Sentiment Polarity
             </label>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -238,7 +321,7 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
                 value={newTagInput}
                 onChange={(e) => setNewTagInput(e.target.value)}
                 onKeyDown={handleAddTag}
-                placeholder="Add topic tag (e.g. 'TypeScript', 'Frontend')..."
+                placeholder="Add topic tag (e.g. 'Decision', 'PostgreSQL')..."
                 className="flex-1 p-2 rounded-lg border border-neutral-200 outline-none text-xs focus:border-indigo-400"
               />
               <button
@@ -253,38 +336,35 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="font-semibold text-neutral-700">
-                Confidence Score
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="userCurated"
+                checked={userCurated}
+                onChange={(e) => setUserCurated(e.target.checked)}
+                className="rounded text-indigo-600 focus:ring-indigo-500"
+              />
+              <label htmlFor="userCurated" className="text-neutral-700 font-medium cursor-pointer">
+                User-Curated (High Trust Anchor)
               </label>
-              <span className="font-mono text-neutral-500">{(confidence * 100).toFixed(0)}%</span>
             </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.0"
-              step="0.01"
-              value={confidence}
-              onChange={(e) => setConfidence(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-            />
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="pinned"
+                checked={pinned}
+                onChange={(e) => setPinned(e.target.checked)}
+                className="rounded text-indigo-600 focus:ring-indigo-500"
+              />
+              <label htmlFor="pinned" className="text-neutral-700 font-medium cursor-pointer">
+                Pin as Invariant
+              </label>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="checkbox"
-              id="pinned"
-              checked={pinned}
-              onChange={(e) => setPinned(e.target.checked)}
-              className="rounded text-indigo-600 focus:ring-indigo-500"
-            />
-            <label htmlFor="pinned" className="text-neutral-700 font-medium cursor-pointer">
-              Pin as Core Priority Memory (Always loaded first)
-            </label>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
             <button
               type="button"
               onClick={onClose}
@@ -296,7 +376,7 @@ export const AddEditMemoryModal: React.FC<AddEditMemoryModalProps> = ({
               type="submit"
               className="px-4 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white font-semibold transition-colors"
             >
-              {editingMemory ? 'Update Memory' : 'Save to Mem0'}
+              {editingMemory ? 'Update Context Item' : 'Save to Context Layer'}
             </button>
           </div>
         </form>

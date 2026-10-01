@@ -17,13 +17,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   sessions,
   agents,
 }) => {
-  const [format, setFormat] = useState<'json' | 'markdown' | 'mcp'>('json');
+  const [format, setFormat] = useState<'json' | 'markdown' | 'mcp' | 'clarilayer'>('clarilayer');
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
 
   const getExportData = () => {
-    if (format === 'json') {
+    if (format === 'clarilayer') {
+      return JSON.stringify(
+        {
+          schema: 'https://clarilayer.com/schemas/v1/context-layer.json',
+          description: 'ClariLayer Personal Context Layer: Decisions, Definitions, Preferences & Rules',
+          exportedAt: new Date().toISOString(),
+          contextShards: memories.map((m) => ({
+            id: m.id,
+            content: m.content,
+            category: m.category,
+            scope: m.scope || 'global',
+            userCurated: m.userCurated !== false,
+            decisionRationale: m.decisionRationale || null,
+            verification: m.verification || {
+              status: 'verified',
+              sourceType: 'user_curated',
+            },
+            tags: m.tags || [],
+            applicableTools: m.applicableTools || ['Claude Code', 'Cursor', 'OpenMemory MCP'],
+          })),
+        },
+        null,
+        2
+      );
+    } else if (format === 'json') {
       return JSON.stringify(
         {
           project: 'MemStudio - AI Assistant With Memory',
@@ -112,6 +136,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <div className="p-4 space-y-3">
           <div className="flex bg-neutral-100 p-0.5 rounded-xl text-xs font-medium">
             <button
+              onClick={() => setFormat('clarilayer')}
+              className={`flex-1 py-1.5 rounded-lg transition-all ${
+                format === 'clarilayer' ? 'bg-white text-indigo-950 shadow-2xs font-bold' : 'text-neutral-500'
+              }`}
+            >
+              ClariLayer Context
+            </button>
+            <button
               onClick={() => setFormat('json')}
               className={`flex-1 py-1.5 rounded-lg transition-all ${
                 format === 'json' ? 'bg-white text-neutral-900 shadow-2xs font-semibold' : 'text-neutral-500'
@@ -133,7 +165,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 format === 'mcp' ? 'bg-white text-neutral-900 shadow-2xs font-semibold' : 'text-neutral-500'
               }`}
             >
-              OpenMemory MCP
+              MCP
             </button>
           </div>
 

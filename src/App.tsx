@@ -9,6 +9,10 @@ import { AddEditMemoryModal } from './components/AddEditMemoryModal';
 import { ExportModal } from './components/ExportModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { QuickVoiceNoteRecorder } from './components/QuickVoiceNoteRecorder';
+import { ClariLayerContextInspector } from './components/ClariLayerContextInspector';
+import { ProjectDockSidebar } from './components/ProjectDockSidebar';
+import { ProjectHomeDashboard } from './components/ProjectHomeDashboard';
+import { UpgradeModal } from './components/UpgradeModal';
 
 import {
   INITIAL_MEMORIES,
@@ -17,9 +21,12 @@ import {
   INITIAL_CHAT_HISTORIES,
 } from './initialData';
 import { MemoryItem, MemoryCategory, MemorySentiment, Session, AgentWorkflow, ChatMessage, AgentExecutionLog } from './types';
-import { Brain, Layers, Cpu, Database } from 'lucide-react';
+import { Brain, Layers, Cpu, Database, ShieldCheck, ArrowLeft, Sparkles, MessageSquare } from 'lucide-react';
 
 export default function App() {
+  // Navigation View State: 'home' (Image 2 design) | 'chat' | 'explore' | 'context' | 'history'
+  const [activeView, setActiveView] = useState<'home' | 'chat' | 'explore' | 'context' | 'history'>('home');
+
   // Memories State
   const [memories, setMemories] = useState<MemoryItem[]>(() => {
     const saved = localStorage.getItem('ai_assistant_memories');
@@ -43,14 +50,68 @@ export default function App() {
   // Agents State
   const [agents, setAgents] = useState<AgentWorkflow[]>(INITIAL_AGENTS);
 
-  // Right Panel Tab: 'memories' | 'agents' | 'mcp'
-  const [rightPanelTab, setRightPanelTab] = useState<'memories' | 'agents' | 'mcp'>('memories');
+  // Right Panel Tab: 'memories' | 'clarilayer' | 'agents' | 'mcp'
+  const [rightPanelTab, setRightPanelTab] = useState<'memories' | 'clarilayer' | 'agents' | 'mcp'>('clarilayer');
 
   // Loading States
   const [isLoading, setIsLoading] = useState(false);
   const [isMultiAgentRunning, setIsMultiAgentRunning] = useState(false);
   const [isRecalling, setIsRecalling] = useState(false);
   const [isQuotaLimited, setIsQuotaLimited] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+
+  // Modals
+  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+
+  // Focus & live memory state
+  const [selectedMemoryForHighlight, setSelectedMemoryForHighlight] = useState<MemoryItem | null>(null);
+  const [recentlyExtractedMemories, setRecentlyExtractedMemories] = useState<MemoryItem[]>([]);
+  const [latestAgentRunResult, setLatestAgentRunResult] = useState<{
+    task: string;
+    logs: AgentExecutionLog[];
+    synthesis: string;
+  } | null>(null);
+
+  // ClariLayer: Reconcile and audit saved context against evidence
+  const handleReconcileContext = async () => {
+    setIsReconciling(true);
+    try {
+      const resp = await fetch('/api/reconcile-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memories }),
+      });
+      const data = await resp.json();
+      if (Array.isArray(data.reconciled) && data.reconciled.length > 0) {
+        setMemories((prev) =>
+          prev.map((m) => {
+            const match = data.reconciled.find((r: any) => r.id === m.id);
+            if (match) {
+              return {
+                ...m,
+                verification: {
+                  status: match.status,
+                  lastChecked: 'Just now',
+                  sourceType: m.userCurated ? 'user_curated' : 'data_reconciled',
+                  evidence: match.evidence || m.verification?.evidence,
+                  caveatNote: match.caveatNote,
+                },
+              };
+            }
+            return m;
+          })
+        );
+      }
+    } catch (e) {
+      console.warn('Reconcile context request failed:', e);
+    } finally {
+      setIsReconciling(false);
+    }
+  };
 
   // Check engine status on mount
   useEffect(() => {
@@ -63,25 +124,6 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
-
-  // Memory Inspector Focus
-  const [selectedMemoryForHighlight, setSelectedMemoryForHighlight] = useState<MemoryItem | null>(null);
-
-  // Live Extracted Memory Toasts
-  const [recentlyExtractedMemories, setRecentlyExtractedMemories] = useState<MemoryItem[]>([]);
-
-  // Multi-Agent Execution Results
-  const [latestAgentRunResult, setLatestAgentRunResult] = useState<{
-    task: string;
-    logs: AgentExecutionLog[];
-    synthesis: string;
-  } | null>(null);
-
-  // Modals
-  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
-  const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // Sync to localStorage
   useEffect(() => {
@@ -432,90 +474,164 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-neutral-100 text-neutral-900 font-sans overflow-hidden antialiased">
-      {/* 1. TOP HEADER NAVIGATION */}
-      <HeaderNav
+    <div className="flex h-screen w-screen bg-[#eef3fc] text-neutral-900 font-sans overflow-hidden antialiased select-none relative">
+      {/* 1. LEFT CAPSULE DOCK SIDEBAR */}
+      <ProjectDockSidebar
+        activeView={activeView}
+        onSelectView={(v) => setActiveView(v)}
+        onNewChat={() => {
+          handleNewSession();
+          setActiveView('chat');
+        }}
         memoryCount={memories.length}
-        sessionCount={sessions.length}
-        onNewSession={handleNewSession}
-        onExport={() => setIsExportOpen(true)}
-        onTestCrossSessionRecall={handleTestCrossSessionRecall}
-        isRecalling={isRecalling}
-        isQuotaLimited={isQuotaLimited}
       />
 
-      {/* 2. THREE-PANEL CORE INTERFACE */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* LEFT COLUMN: Sessions / Conversations List */}
-        <SessionsList
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelectSession={setActiveSessionId}
-          onNewSession={handleNewSession}
-          memories={memories}
-          onQuickPrompt={handleSendMessage}
-        />
+      {/* 2. MAIN WORKSPACE CONTAINER */}
+      <div className="flex-1 flex overflow-hidden my-2 md:my-3 mr-2 md:mr-3 rounded-3xl bg-white shadow-xl border border-white/60 relative">
+        {/* VIEW A: HOME DASHBOARD (Project Purpose: Mem0 Vector Knowledge, ClariLayer Context, Zero Amnesia) */}
+        {activeView === 'home' && (
+          <ProjectHomeDashboard
+            onSendMessage={(msg) => {
+              handleSendMessage(msg);
+              setActiveView('chat');
+            }}
+            onOpenContextLayer={() => {
+              setActiveView('context');
+            }}
+            onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+            onOpenNewSession={handleNewSession}
+            onTestRecall={handleTestCrossSessionRecall}
+            memories={memories}
+            activeSession={activeSession}
+            isRecalling={isRecalling}
+          />
+        )}
 
-        {/* MIDDLE COLUMN: Chat Experience with Memory Citations */}
-        <ChatArea
-          messages={currentMessages}
-          onSendMessage={handleSendMessage}
-          isLoading={isLoading}
-          activeSession={activeSession}
-          memories={memories}
-          onSelectMemoryForInspection={handleSelectMemoryForInspection}
-          recentlyExtractedMemories={recentlyExtractedMemories}
-        />
+        {/* VIEW B: CHAT WORKSPACE (Clean, Sleek with Memory Citations and Collapsible Context) */}
+        {activeView === 'chat' && (
+          <div className="flex-1 flex flex-col h-full bg-neutral-50/40">
+            {/* Top Bar for Chat */}
+            <div className="h-12 border-b border-neutral-100 px-4 flex items-center justify-between bg-white shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveView('home')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Home</span>
+                </button>
+                <div className="h-4 w-px bg-neutral-200" />
+                <span className="text-xs font-bold text-neutral-900 truncate">
+                  {activeSession.title}
+                </span>
+              </div>
 
-        {/* RIGHT COLUMN: Memory Inspector & Multi-Agent Workspace */}
-        <div className="w-96 border-l border-neutral-200/80 bg-white flex flex-col h-full shrink-0">
-          {/* Tab Selector */}
-          <div className="p-2 border-b border-neutral-200/80 bg-neutral-50/70">
-            <div className="flex bg-neutral-200/60 p-0.5 rounded-lg text-xs font-medium">
-              <button
-                onClick={() => setRightPanelTab('memories')}
-                className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'memories'
-                    ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
-                    : 'text-neutral-500 hover:text-neutral-900'
-                }`}
-              >
-                <Brain className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Mem0 Store</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveView('context')}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-all border border-indigo-200/80 cursor-pointer"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Personal Context ({memories.length})</span>
+                </button>
+                <button
+                  onClick={handleNewSession}
+                  className="px-3 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  + New Session
+                </button>
+              </div>
+            </div>
 
-              <button
-                onClick={() => setRightPanelTab('agents')}
-                className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'agents'
-                    ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
-                    : 'text-neutral-500 hover:text-neutral-900'
-                }`}
-              >
-                <Cpu className="w-3.5 h-3.5 text-amber-600" />
-                <span>CrewAI</span>
-              </button>
+            {/* Middle Chat & Right Panel */}
+            <div className="flex-1 flex overflow-hidden">
+              <ChatArea
+                messages={currentMessages}
+                onSendMessage={handleSendMessage}
+                isLoading={isLoading}
+                activeSession={activeSession}
+                memories={memories}
+                onSelectMemoryForInspection={handleSelectMemoryForInspection}
+                recentlyExtractedMemories={recentlyExtractedMemories}
+                onSaveToContextLayer={(text) => {
+                  setEditingMemory({
+                    id: `mem-curated-${Date.now()}`,
+                    content: text,
+                    category: 'decision',
+                    scope: 'global',
+                    confidence: 0.99,
+                    timestamp: 'Just now',
+                    sessionId: activeSessionId,
+                    sessionTitle: activeSession.title,
+                    userCurated: true,
+                    tags: ['CuratedContext', 'Decision'],
+                    verification: {
+                      status: 'verified',
+                      lastChecked: 'Just now',
+                      sourceType: 'user_curated',
+                      evidence: 'Directly selected from chat turn by user.',
+                    },
+                  });
+                  setIsAddEditModalOpen(true);
+                  setActiveView('context');
+                }}
+              />
 
-              <button
-                onClick={() => setRightPanelTab('mcp')}
-                className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  rightPanelTab === 'mcp'
-                    ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
-                    : 'text-neutral-500 hover:text-neutral-900'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5 text-blue-600" />
-                <span>OpenMemory</span>
-              </button>
+              {/* Right Panel for Live Shards */}
+              <div className="w-80 border-l border-neutral-100 bg-white hidden xl:flex flex-col h-full">
+                <ClariLayerContextInspector
+                  memories={memories}
+                  onAddContext={() => {
+                    setEditingMemory(null);
+                    setIsAddEditModalOpen(true);
+                  }}
+                  onEditMemory={(mem) => {
+                    setEditingMemory(mem);
+                    setIsAddEditModalOpen(true);
+                  }}
+                  onReconcileAll={handleReconcileContext}
+                  isReconciling={isReconciling}
+                />
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Tab Content */}
-          <div className="flex-1 overflow-hidden">
-            {rightPanelTab === 'memories' && (
-              <MemoryInspector
+        {/* VIEW C: FULL CLARILAYER PERSONAL CONTEXT LAYER */}
+        {activeView === 'context' && (
+          <div className="flex-1 flex flex-col h-full bg-white">
+            <div className="h-12 border-b border-neutral-100 px-4 flex items-center justify-between shrink-0">
+              <button
+                onClick={() => setActiveView('home')}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Assistant</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsExportOpen(true)}
+                  className="px-3 py-1 rounded-full border border-neutral-200 hover:bg-neutral-50 text-xs font-bold text-neutral-700 transition-colors cursor-pointer"
+                >
+                  Export Schema
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingMemory(null);
+                    setIsAddEditModalOpen(true);
+                  }}
+                  className="px-3.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  + Add Fact / Rule
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-hidden">
+              <ClariLayerContextInspector
                 memories={memories}
-                onAddMemory={() => {
+                onAddContext={() => {
                   setEditingMemory(null);
                   setIsAddEditModalOpen(true);
                 }}
@@ -523,33 +639,71 @@ export default function App() {
                   setEditingMemory(mem);
                   setIsAddEditModalOpen(true);
                 }}
-                onDeleteMemory={handleDeleteMemory}
-                onDeleteMultipleMemories={handleDeleteMultipleMemories}
-                onBulkAddTags={handleBulkAddTags}
-                onToggleArchiveMemory={handleToggleArchiveMemory}
-                onBulkArchiveMemories={handleBulkArchiveMemories}
-                onAutoArchiveRarelyAccessed={handleAutoArchiveRarelyAccessed}
-                onMergeMemories={handleMergeMemories}
-                onTogglePinMemory={handleTogglePinMemory}
-                selectedMemoryForHighlight={selectedMemoryForHighlight}
+                onReconcileAll={handleReconcileContext}
+                isReconciling={isReconciling}
               />
-            )}
-
-            {rightPanelTab === 'agents' && (
-              <MultiAgentRunner
-                agents={agents}
-                memories={memories}
-                onTriggerMultiAgentRun={handleTriggerMultiAgentRun}
-                isRunning={isMultiAgentRunning}
-                latestRunResult={latestAgentRunResult}
-              />
-            )}
-
-            {rightPanelTab === 'mcp' && (
-              <OpenMemoryMCPViewer memories={memories} />
-            )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* VIEW D: SESSIONS HISTORY & CONVERSATION CONTINUITY */}
+        {activeView === 'history' && (
+          <div className="flex-1 flex flex-col h-full bg-white">
+            <div className="h-12 border-b border-neutral-100 px-4 flex items-center justify-between shrink-0">
+              <button
+                onClick={() => setActiveView('home')}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
+              </button>
+              <span className="text-xs font-bold text-neutral-800">
+                Tracked Sessions ({sessions.length})
+              </span>
+            </div>
+
+            <div className="flex-1 flex overflow-hidden">
+              <SessionsList
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSelectSession={(id) => {
+                  setActiveSessionId(id);
+                  setActiveView('chat');
+                }}
+                onNewSession={() => {
+                  handleNewSession();
+                  setActiveView('chat');
+                }}
+                memories={memories}
+                onQuickPrompt={(text) => {
+                  handleSendMessage(text);
+                  setActiveView('chat');
+                }}
+              />
+
+              <div className="flex-1 bg-neutral-50/50 flex flex-col items-center justify-center p-8 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
+                  <Brain className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-neutral-900 mb-1">
+                  Zero Context Amnesia Across Sessions
+                </h3>
+                <p className="text-xs text-neutral-500 max-w-sm mb-4">
+                  Select any previous session or start a new thread. All {memories.length} long-term memory propositions and architectural decisions carry forward automatically.
+                </p>
+                <button
+                  onClick={() => {
+                    handleNewSession();
+                    setActiveView('chat');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-neutral-900 text-white text-xs font-bold shadow-md hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  Start New Context Session
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. MODALS */}
@@ -580,8 +734,19 @@ export default function App() {
         sessions={sessions}
         agents={agents}
         onSelectMemory={handleSelectMemoryForInspection}
-        onSelectSession={setActiveSessionId}
-        onTriggerInspiration={handleSendMessage}
+        onSelectSession={(id) => {
+          setActiveSessionId(id);
+          setActiveView('chat');
+        }}
+        onTriggerInspiration={(text) => {
+          handleSendMessage(text);
+          setActiveView('chat');
+        }}
+      />
+
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
       />
 
       {/* Floating Record Quick Note Button & Audio Capture Suite */}

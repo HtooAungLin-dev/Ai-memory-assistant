@@ -1,5 +1,15 @@
-export type MemoryCategory = 'identity' | 'preference' | 'project' | 'knowledge' | 'constraint' | 'workflow';
+export type MemoryCategory = 'identity' | 'preference' | 'project' | 'knowledge' | 'constraint' | 'workflow' | 'decision' | 'definition' | 'rule' | 'lesson';
 export type MemorySentiment = 'positive' | 'negative' | 'neutral';
+export type ContextScope = 'global' | 'task-scoped' | 'project';
+export type VerificationStatus = 'verified' | 'unverified' | 'caveat' | 'drifted';
+
+export interface ContextVerification {
+  status: VerificationStatus;
+  lastChecked?: string;
+  sourceType?: 'user_curated' | 'ai_extracted' | 'data_reconciled' | 'codebase_evidence';
+  evidence?: string;
+  caveatNote?: string;
+}
 
 export interface MemoryItem {
   id: string;
@@ -15,6 +25,13 @@ export interface MemoryItem {
   sentiment?: MemorySentiment;
   tags?: string[];
   archived?: boolean;
+  // ClariLayer Context Layer extensions
+  scope?: ContextScope;
+  userCurated?: boolean; // User explicitly chose to remember/verify this
+  decisionRationale?: string; // Why this decision was made
+  verification?: ContextVerification;
+  alternativesConsidered?: string[];
+  applicableTools?: string[]; // e.g. ['Claude Code', 'Cursor', 'Python Agent', 'SQL']
 }
 
 export interface ChatMessage {
